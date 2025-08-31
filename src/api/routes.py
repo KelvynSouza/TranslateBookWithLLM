@@ -18,6 +18,9 @@ from src.config import (
     OLLAMA_NUM_CTX,
     MAX_TRANSLATION_ATTEMPTS,
     RETRY_DELAY_SECONDS,
+    TEMPERATURE,
+    TOP_K,
+    TOP_P,
     DEFAULT_SOURCE_LANGUAGE,
     DEFAULT_TARGET_LANGUAGE
 )
@@ -25,11 +28,11 @@ from src.config import (
 
 def configure_routes(app, state_manager, output_dir, start_translation_job):
     """Configure Flask routes"""
-    
+
     # Initialize secure file handler
     upload_dir = Path(output_dir) / 'uploads'
     secure_file_handler = SecureFileHandler(upload_dir)
-    
+
     @app.route('/')
     def serve_interface():
         interface_path = 'src/web/templates/translation_interface.html'
@@ -50,14 +53,14 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
     @app.route('/api/models', methods=['GET'])
     def get_available_models():
         provider = request.args.get('provider', 'ollama')
-        
+
         if provider == 'gemini':
             # Get Gemini models
             api_key = request.args.get('api_key')
             if not api_key:
                 import os
                 api_key = os.getenv('GEMINI_API_KEY')
-                
+
             if not api_key:
                 return jsonify({
                     "models": [],
@@ -66,15 +69,15 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                     "count": 0,
                     "error": "Gemini API key is required. Set GEMINI_API_KEY environment variable or pass api_key parameter."
                 })
-            
+
             # Use async function to get models
             import asyncio
             from src.core.llm_providers import GeminiProvider
-            
+
             try:
                 gemini_provider = GeminiProvider(api_key=api_key)
                 models = asyncio.run(gemini_provider.get_available_models())
-                
+
                 if models:
                     model_names = [m['name'] for m in models]
                     return jsonify({
@@ -92,7 +95,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                         "count": 0,
                         "error": "Failed to retrieve Gemini models"
                     })
-                    
+
             except Exception as e:
                 print(f"❌ Error retrieving Gemini models: {e}")
                 return jsonify({
@@ -102,7 +105,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                     "count": 0,
                     "error": f"Error connecting to Gemini API: {str(e)}"
                 })
-        
+
         else:
             # Original Ollama logic
             ollama_base_from_ui = request.args.get('api_endpoint', DEFAULT_OLLAMA_API_ENDPOINT)
@@ -140,7 +143,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
         # Get Gemini API key from environment
         import os
         gemini_api_key = os.getenv('GEMINI_API_KEY', '')
-        
+
         return jsonify({
             "api_endpoint": DEFAULT_OLLAMA_API_ENDPOINT,
             "default_model": DEFAULT_MODEL,
@@ -149,6 +152,9 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
             "context_window": OLLAMA_NUM_CTX,
             "max_attempts": MAX_TRANSLATION_ATTEMPTS,
             "retry_delay": RETRY_DELAY_SECONDS,
+            "temperature": TEMPERATURE,
+            "top_k": TOP_K,
+            "top_p": TOP_P,
             "supported_formats": ["txt", "epub", "srt"],
             "gemini_api_key": gemini_api_key,
             "default_source_language": DEFAULT_SOURCE_LANGUAGE,
@@ -165,7 +171,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
             required_fields = ['file_path', 'source_language', 'target_language', 'model', 'llm_api_endpoint', 'output_filename', 'file_type']
         else:
             required_fields = ['text', 'source_language', 'target_language', 'model', 'llm_api_endpoint', 'output_filename']
-        
+
         for field in required_fields:
             if field not in data or (isinstance(data[field], str) and not data[field].strip()) or (not isinstance(data[field], str) and data[field] is None):
                 if field == 'text' and data.get('file_type') == 'txt' and data.get('text') == "":
@@ -186,6 +192,9 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
             'context_window': int(data.get('context_window', OLLAMA_NUM_CTX)),
             'max_attempts': int(data.get('max_attempts', 2)),
             'retry_delay': int(data.get('retry_delay', 2)),
+            'temperature': float(data.get('temperature', TEMPERATURE)),
+            'top_k': int(data.get('top_k', TOP_K)),
+            'top_p': float(data.get('top_p', TOP_P)),
             'output_filename': data['output_filename'],
             'custom_instructions': data.get('custom_instructions', ''),
             'llm_provider': data.get('llm_provider', 'ollama'),
@@ -214,7 +223,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
     @app.route('/api/upload', methods=['POST'])
     def upload_file():
         """Secure file upload with comprehensive validation"""
-        
+
         # Rate limiting
         client_ip = get_client_ip(request)
         if not rate_limiter.is_allowed(client_ip):
@@ -222,38 +231,38 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                 "error": "Rate limit exceeded. Please wait before uploading again.",
                 "remaining_requests": rate_limiter.get_remaining_requests(client_ip)
             }), 429
-        
+
         # Check if file is present
         if 'file' not in request.files:
             return jsonify({"error": "No file part in request"}), 400
-        
+
         file = request.files['file']
         if not file or file.filename == '':
             return jsonify({"error": "No file selected"}), 400
-        
+
         # Security check: limit filename length in request
         if len(file.filename) > 255:
             return jsonify({"error": "Filename too long"}), 400
-        
+
         try:
             # Read file data
             file_data = file.read()
-            
+
             # Quick size check before validation
             if len(file_data) == 0:
                 return jsonify({"error": "Empty file not allowed"}), 400
-            
+
             # Validate and save file securely
             validation_result = secure_file_handler.validate_and_save_file(
                 file_data, file.filename
             )
-            
+
             if not validation_result.is_valid:
                 return jsonify({
                     "error": validation_result.error_message,
                     "details": "File validation failed"
                 }), 400
-            
+
             # Determine file type
             original_filename = file.filename.lower()
             if original_filename.endswith('.epub'):
@@ -262,11 +271,11 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                 file_type = "srt"
             else:
                 file_type = "txt"
-            
+
             # Get file info
             file_size = len(file_data)
             secure_path = validation_result.file_path
-            
+
             # Return success response
             response_data = {
                 "success": True,
@@ -277,23 +286,23 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                 "size": file_size,
                 "size_mb": round(file_size / (1024 * 1024), 2)
             }
-            
+
             # Add warnings if any
             if validation_result.warnings:
                 response_data["warnings"] = validation_result.warnings
-            
+
             # Log successful upload
             app.logger.info(f"Secure file upload successful: {file.filename} -> {secure_path.name}, Size: {file_size} bytes, IP: {client_ip}")
-            
+
             return jsonify(response_data), 200
-            
+
         except SecurityError as e:
             app.logger.warning(f"Security violation in file upload: {str(e)}, IP: {client_ip}, Filename: {file.filename}")
             return jsonify({
                 "error": "Security validation failed",
                 "details": str(e)
             }), 403
-            
+
         except Exception as e:
             app.logger.error(f"File upload error: {str(e)}, IP: {client_ip}, Filename: {file.filename}")
             return jsonify({
@@ -307,7 +316,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
         if not job_data:
             return jsonify({"error": "Translation not found"}), 404
         stats = job_data.get('stats', {'start_time': time.time(), 'total_chunks': 0, 'completed_chunks': 0, 'failed_chunks': 0})
-        
+
         if job_data.get('status') == 'running' or job_data.get('status') == 'queued':
             elapsed = time.time() - stats.get('start_time', time.time())
         else:
@@ -335,7 +344,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
     def interrupt_translation_job(translation_id):
         if not state_manager.exists(translation_id):
             return jsonify({"error": "Translation not found"}), 404
-        
+
         job_data = state_manager.get_translation(translation_id)
         if job_data.get('status') == 'running' or job_data.get('status') == 'queued':
             state_manager.set_interrupted(translation_id, True)
@@ -354,19 +363,19 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
         try:
             # Get max age from request (default 24 hours)
             max_age_hours = request.json.get('max_age_hours', 24) if request.json else 24
-            
+
             # Validate input
             if not isinstance(max_age_hours, (int, float)) or max_age_hours < 1:
                 return jsonify({"error": "Invalid max_age_hours parameter"}), 400
-            
+
             # Perform cleanup
             secure_file_handler.cleanup_old_files(max_age_hours)
-            
+
             return jsonify({
                 "success": True,
                 "message": f"Cleanup completed for files older than {max_age_hours} hours"
             })
-            
+
         except Exception as e:
             app.logger.error(f"Cleanup error: {str(e)}")
             return jsonify({"error": "Cleanup failed"}), 500
@@ -375,7 +384,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
     def get_security_info():
         """Get security configuration and limits"""
         client_ip = get_client_ip(request)
-        
+
         return jsonify({
             "file_limits": {
                 "max_size_mb": SecureFileHandler.MAX_FILE_SIZE // (1024 * 1024),
@@ -396,7 +405,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
         try:
             files_info = []
             translated_dir = Path(output_dir)
-            
+
             # Get all files in translated_files directory (excluding upload subdirectory)
             for file_path in translated_dir.iterdir():
                 if file_path.is_file():
@@ -410,7 +419,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                         "modified_date": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                         "file_type": file_path.suffix.lower()[1:] if file_path.suffix else "unknown"
                     })
-            
+
             # Check uploads directory too
             uploads_dir = translated_dir / 'uploads'
             if uploads_dir.exists():
@@ -427,20 +436,20 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                             "file_type": file_path.suffix.lower()[1:] if file_path.suffix else "unknown",
                             "is_upload": True
                         })
-            
+
             # Sort by modified time (newest first)
             files_info.sort(key=lambda x: x['modified_time'], reverse=True)
-            
+
             # Calculate total size
             total_size = sum(f['size_bytes'] for f in files_info)
-            
+
             return jsonify({
                 "files": files_info,
                 "total_files": len(files_info),
                 "total_size_bytes": total_size,
                 "total_size_mb": round(total_size / (1024 * 1024), 2)
             })
-            
+
         except Exception as e:
             app.logger.error(f"Error listing files: {str(e)}")
             return jsonify({"error": "Failed to list files", "details": str(e)}), 500
@@ -452,19 +461,19 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
             # Security check - prevent directory traversal
             if '..' in filename or filename.startswith('/'):
                 return jsonify({"error": "Invalid filename"}), 400
-            
+
             # Check in main translated_files directory
             file_path = Path(output_dir) / filename
             if file_path.exists() and file_path.is_file():
                 return send_from_directory(output_dir, filename, as_attachment=True)
-            
+
             # Check in uploads subdirectory
             upload_path = Path(output_dir) / 'uploads' / filename
             if upload_path.exists() and upload_path.is_file():
                 return send_from_directory(str(Path(output_dir) / 'uploads'), filename, as_attachment=True)
-            
+
             return jsonify({"error": "File not found"}), 404
-            
+
         except Exception as e:
             app.logger.error(f"Error downloading file {filename}: {str(e)}")
             return jsonify({"error": "Download failed", "details": str(e)}), 500
@@ -476,9 +485,9 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
             # Security check - prevent directory traversal
             if '..' in filename or filename.startswith('/'):
                 return jsonify({"error": "Invalid filename"}), 400
-            
+
             deleted = False
-            
+
             # Try to delete from main directory
             file_path = Path(output_dir) / filename
             if file_path.exists() and file_path.is_file():
@@ -490,13 +499,13 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                 if upload_path.exists() and upload_path.is_file():
                     upload_path.unlink()
                     deleted = True
-            
+
             if deleted:
                 app.logger.info(f"File deleted: {filename}")
                 return jsonify({"success": True, "message": f"File {filename} deleted successfully"})
             else:
                 return jsonify({"error": "File not found"}), 404
-                
+
         except Exception as e:
             app.logger.error(f"Error deleting file {filename}: {str(e)}")
             return jsonify({"error": "Delete failed", "details": str(e)}), 500
@@ -508,53 +517,53 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
             import zipfile
             import io
             import time
-            
+
             # Get list of filenames from request
             data = request.json
             if not data or 'filenames' not in data:
                 return jsonify({"error": "No filenames provided"}), 400
-            
+
             filenames = data['filenames']
             if not isinstance(filenames, list) or len(filenames) == 0:
                 return jsonify({"error": "Invalid filenames list"}), 400
-            
+
             # Create in-memory zip file
             zip_buffer = io.BytesIO()
-            
+
             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                 files_added = 0
-                
+
                 for filename in filenames:
                     # Security check
                     if '..' in filename or filename.startswith('/'):
                         continue
-                    
+
                     # Try to find file
                     file_path = Path(output_dir) / filename
                     if not file_path.exists():
                         file_path = Path(output_dir) / 'uploads' / filename
-                    
+
                     if file_path.exists() and file_path.is_file():
                         zip_file.write(file_path, filename)
                         files_added += 1
-            
+
             if files_added == 0:
                 return jsonify({"error": "No valid files found to download"}), 404
-            
+
             # Prepare zip for download
             zip_buffer.seek(0)
-            
+
             # Generate filename with timestamp
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             zip_filename = f"translated_files_{timestamp}.zip"
-            
+
             return send_file(
                 zip_buffer,
                 mimetype='application/zip',
                 as_attachment=True,
                 download_name=zip_filename
             )
-            
+
         except Exception as e:
             app.logger.error(f"Error creating batch download: {str(e)}")
             return jsonify({"error": "Batch download failed", "details": str(e)}), 500
@@ -567,23 +576,23 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
             data = request.json
             if not data or 'filenames' not in data:
                 return jsonify({"error": "No filenames provided"}), 400
-            
+
             filenames = data['filenames']
             if not isinstance(filenames, list) or len(filenames) == 0:
                 return jsonify({"error": "Invalid filenames list"}), 400
-            
+
             deleted_files = []
             failed_files = []
-            
+
             for filename in filenames:
                 # Security check
                 if '..' in filename or filename.startswith('/'):
                     failed_files.append({"filename": filename, "reason": "Invalid filename"})
                     continue
-                
+
                 try:
                     deleted = False
-                    
+
                     # Try main directory
                     file_path = Path(output_dir) / filename
                     if file_path.exists() and file_path.is_file():
@@ -595,22 +604,22 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                         if upload_path.exists() and upload_path.is_file():
                             upload_path.unlink()
                             deleted = True
-                    
+
                     if deleted:
                         deleted_files.append(filename)
                     else:
                         failed_files.append({"filename": filename, "reason": "File not found"})
-                        
+
                 except Exception as e:
                     failed_files.append({"filename": filename, "reason": str(e)})
-            
+
             return jsonify({
                 "success": True,
                 "deleted": deleted_files,
                 "failed": failed_files,
                 "total_deleted": len(deleted_files)
             })
-            
+
         except Exception as e:
             app.logger.error(f"Error in batch delete: {str(e)}")
             return jsonify({"error": "Batch delete failed", "details": str(e)}), 500
@@ -623,25 +632,25 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
             data = request.json
             if not data or 'file_paths' not in data:
                 return jsonify({"error": "No file paths provided"}), 400
-            
+
             file_paths = data['file_paths']
             if not isinstance(file_paths, list):
                 return jsonify({"error": "Invalid file paths list"}), 400
-            
+
             deleted_files = []
             failed_files = []
-            
+
             for file_path_str in file_paths:
                 try:
                     file_path = Path(file_path_str)
-                    
+
                     # Security check - ensure file is in uploads directory
                     upload_dir_path = Path(output_dir) / 'uploads'
                     try:
                         # Resolve to absolute paths for comparison
                         file_path_resolved = file_path.resolve()
                         upload_dir_resolved = upload_dir_path.resolve()
-                        
+
                         # Check if file is within uploads directory
                         if not str(file_path_resolved).startswith(str(upload_dir_resolved)):
                             failed_files.append({"file_path": file_path_str, "reason": "Security: File not in uploads directory"})
@@ -649,7 +658,7 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                     except Exception:
                         failed_files.append({"file_path": file_path_str, "reason": "Invalid file path"})
                         continue
-                    
+
                     # Delete the file if it exists
                     if file_path.exists() and file_path.is_file():
                         file_path.unlink()
@@ -657,25 +666,25 @@ def configure_routes(app, state_manager, output_dir, start_translation_job):
                         app.logger.info(f"Deleted uploaded file: {file_path_str}")
                     else:
                         failed_files.append({"file_path": file_path_str, "reason": "File not found"})
-                        
+
                 except Exception as e:
                     failed_files.append({"file_path": file_path_str, "reason": str(e)})
-            
+
             return jsonify({
                 "success": True,
                 "deleted": deleted_files,
                 "failed": failed_files,
                 "total_deleted": len(deleted_files)
             })
-            
+
         except Exception as e:
             app.logger.error(f"Error clearing uploaded files: {str(e)}")
             return jsonify({"error": "Clear uploads failed", "details": str(e)}), 500
 
     @app.errorhandler(404)
-    def route_not_found(error): 
+    def route_not_found(error):
         return jsonify({"error": "API Endpoint not found"}), 404
-    
+
     @app.errorhandler(500)
     def internal_server_error(error):
         import traceback

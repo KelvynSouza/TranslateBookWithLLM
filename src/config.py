@@ -18,6 +18,9 @@ REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '60'))
 OLLAMA_NUM_CTX = int(os.getenv('OLLAMA_NUM_CTX', '2048'))
 MAX_TRANSLATION_ATTEMPTS = int(os.getenv('MAX_TRANSLATION_ATTEMPTS', '2'))
 RETRY_DELAY_SECONDS = int(os.getenv('RETRY_DELAY_SECONDS', '2'))
+TEMPERATURE = float(os.getenv('TEMPERATURE', '0.6'))
+TOP_K = int(os.getenv('TOP_K', '20'))
+TOP_P = float(os.getenv('TOP_P', '0.95'))
 
 # LLM Provider configuration
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'ollama')  # 'ollama' or 'gemini'
@@ -29,8 +32,8 @@ SRT_LINES_PER_BLOCK = int(os.getenv('SRT_LINES_PER_BLOCK', '5'))
 SRT_MAX_CHARS_PER_BLOCK = int(os.getenv('SRT_MAX_CHARS_PER_BLOCK', '500'))
 
 # Default languages from environment
-DEFAULT_SOURCE_LANGUAGE = os.getenv('DEFAULT_SOURCE_LANGUAGE', 'English')
-DEFAULT_TARGET_LANGUAGE = os.getenv('DEFAULT_TARGET_LANGUAGE', 'French')
+DEFAULT_SOURCE_LANGUAGE = os.getenv('DEFAULT_SOURCE_LANGUAGE', 'Korean')
+DEFAULT_TARGET_LANGUAGE = os.getenv('DEFAULT_TARGET_LANGUAGE', 'English')
 
 # Translation tags
 TRANSLATE_TAG_IN = "<COMPLETED>"
@@ -71,34 +74,37 @@ CONTENT_BLOCK_TAGS_EPUB = [
 @dataclass
 class TranslationConfig:
     """Unified configuration for both CLI and web interfaces"""
-    
+
     # Core settings
     source_language: str = DEFAULT_SOURCE_LANGUAGE
     target_language: str = DEFAULT_TARGET_LANGUAGE
     model: str = DEFAULT_MODEL
     api_endpoint: str = API_ENDPOINT
-    
+
     # LLM Provider settings
     llm_provider: str = LLM_PROVIDER
     gemini_api_key: str = GEMINI_API_KEY
-    
+
     # Translation parameters
     chunk_size: int = MAIN_LINES_PER_CHUNK
     custom_instructions: str = ""
     enable_post_processing: bool = False
     post_processing_instructions: str = ""
-    
+
     # LLM parameters
     timeout: int = REQUEST_TIMEOUT
     max_attempts: int = MAX_TRANSLATION_ATTEMPTS
     retry_delay: int = RETRY_DELAY_SECONDS
     context_window: int = OLLAMA_NUM_CTX
-    
+    temperature: float = TEMPERATURE
+    top_k: float = TOP_K
+    top_p: float = TOP_P
+
     # Interface-specific
     interface_type: str = "cli"  # or "web"
     enable_colors: bool = True
     enable_interruption: bool = False
-    
+
     @classmethod
     def from_cli_args(cls, args) -> 'TranslationConfig':
         """Create config from CLI arguments"""
@@ -116,7 +122,7 @@ class TranslationConfig:
             enable_post_processing=getattr(args, 'post_process', False),
             post_processing_instructions=getattr(args, 'post_process_instructions', '')
         )
-    
+
     @classmethod
     def from_web_request(cls, request_data: dict) -> 'TranslationConfig':
         """Create config from web request data"""
@@ -130,6 +136,9 @@ class TranslationConfig:
             timeout=request_data.get('timeout', REQUEST_TIMEOUT),
             max_attempts=request_data.get('max_attempts', MAX_TRANSLATION_ATTEMPTS),
             retry_delay=request_data.get('retry_delay', RETRY_DELAY_SECONDS),
+            temperature=request_data.get('temperature', TEMPERATURE),
+            top_k=request_data.get('top_k', TOP_K),
+            top_p=request_data.get('top_p', TOP_P),
             context_window=request_data.get('context_window', OLLAMA_NUM_CTX),
             interface_type="web",
             enable_interruption=True,
@@ -138,7 +147,7 @@ class TranslationConfig:
             enable_post_processing=request_data.get('enable_post_processing', False),
             post_processing_instructions=request_data.get('post_processing_instructions', '')
         )
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization"""
         return {
@@ -151,6 +160,9 @@ class TranslationConfig:
             'timeout': self.timeout,
             'max_attempts': self.max_attempts,
             'retry_delay': self.retry_delay,
+            'temperature': self.temperature,
+            'top_k': self.top_k,
+            'top_p': self.top_p,
             'context_window': self.context_window,
             'llm_provider': self.llm_provider,
             'gemini_api_key': self.gemini_api_key,

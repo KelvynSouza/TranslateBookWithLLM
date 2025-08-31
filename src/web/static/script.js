@@ -81,7 +81,7 @@ function handleTranslationUpdate(data) {
             document.getElementById('completedChunks').textContent = data.stats.completed_chunks || '0';
             document.getElementById('failedChunks').textContent = data.stats.failed_chunks || '0';
         }
-        
+
         if (data.stats.elapsed_time !== undefined) {
             document.getElementById('elapsedTime').textContent = data.stats.elapsed_time.toFixed(1) + 's';
         }
@@ -96,7 +96,7 @@ function handleTranslationUpdate(data) {
     } else if (data.status === 'running') {
          document.getElementById('progressSection').classList.remove('hidden');
          document.getElementById('currentFileProgressTitle').textContent = `📊 Translating: ${currentFile.name}`;
-         
+
          if (currentFile.fileType === 'epub') {
              showMessage(`Translating EPUB file: ${currentFile.name}... This may take some time.`, 'info');
              document.getElementById('statsGrid').style.display = 'none';
@@ -107,7 +107,7 @@ function handleTranslationUpdate(data) {
              showMessage(`Translation in progress for ${currentFile.name}...`, 'info');
              document.getElementById('statsGrid').style.display = '';
          }
-         
+
          updateFileStatusInList(currentFile.name, 'Processing');
     }
 }
@@ -115,20 +115,20 @@ function handleTranslationUpdate(data) {
 window.addEventListener('load', async () => {
     // Set up event listener for provider change
     document.getElementById('llmProvider').addEventListener('change', toggleProviderSettings);
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/api/health`);
         if (!response.ok) throw new Error('Server health check failed');
         const healthData = await response.json();
         addLog('Server health check OK.');
-        
+
         if (healthData.supported_formats) {
             addLog(`Supported file formats: ${healthData.supported_formats.join(', ')}`);
         }
-        
+
         // Initialize provider settings first
         toggleProviderSettings();
-        
+
         const configResponse = await fetch(`${API_BASE_URL}/api/config`);
         if (configResponse.ok) {
             const defaultConfig = await configResponse.json();
@@ -138,8 +138,11 @@ window.addEventListener('load', async () => {
             document.getElementById('contextWindow').value = defaultConfig.context_window || 4096;
             document.getElementById('maxAttempts').value = defaultConfig.max_attempts || 2;
             document.getElementById('retryDelay').value = defaultConfig.retry_delay || 2;
+            document.getElementById('temperature').value = defaultConfig.temperature || 0.6;
+            document.getElementById('topK').value = defaultConfig.top_k || 20;
+            document.getElementById('topP').value = defaultConfig.top_p || 0.6;
             document.getElementById('outputFilenamePattern').value = "translated_{originalName}.{ext}";
-            
+
             // Load Gemini API key from environment if available
             if (defaultConfig.gemini_api_key) {
                 document.getElementById('geminiApiKey').value = defaultConfig.gemini_api_key;
@@ -156,9 +159,9 @@ function toggleProviderSettings() {
     const ollamaSettings = document.getElementById('ollamaSettings');
     const geminiSettings = document.getElementById('geminiSettings');
     const modelSelect = document.getElementById('model');
-    
+
     // console.log(`[DEBUG] toggleProviderSettings called with provider: ${provider}`);
-    
+
     if (provider === 'ollama') {
         ollamaSettings.style.display = 'block';
         geminiSettings.style.display = 'none';
@@ -185,23 +188,23 @@ let currentModelLoadRequest = null;
 async function loadGeminiModels() {
     const modelSelect = document.getElementById('model');
     modelSelect.innerHTML = '<option value="">Loading Gemini models...</option>';
-    
+
     try {
         const apiKey = document.getElementById('geminiApiKey').value.trim();
         const response = await fetch(`${API_BASE_URL}/api/models?provider=gemini&api_key=${encodeURIComponent(apiKey)}`);
-        
+
         if (!response.ok) {
             const errData = await response.json();
             throw new Error(errData.error || `HTTP error ${response.status}`);
         }
-        
+
         const data = await response.json();
-        
+
         modelSelect.innerHTML = '';
-        
+
         if (data.models && data.models.length > 0) {
             showMessage('', '');
-            
+
             data.models.forEach(model => {
                 const option = document.createElement('option');
                 option.value = model.name;
@@ -210,7 +213,7 @@ async function loadGeminiModels() {
                 if (model.name === data.default) option.selected = true;
                 modelSelect.appendChild(option);
             });
-            
+
             addLog(`✅ ${data.count} Gemini model(s) loaded (excluding thinking models)`);
         } else {
             const errorMessage = data.error || 'No Gemini models available.';
@@ -230,34 +233,34 @@ async function loadAvailableModels() {
     if (provider === 'gemini') {
         return; // Gemini models are loaded separately
     }
-    
+
     // Cancel any pending request
     if (currentModelLoadRequest) {
         currentModelLoadRequest.cancelled = true;
     }
-    
+
     // Create a new request tracker
     const thisRequest = { cancelled: false };
     currentModelLoadRequest = thisRequest;
-    
+
     const modelSelect = document.getElementById('model');
     modelSelect.innerHTML = '<option value="">Loading models...</option>';
     try {
         const currentApiEp = document.getElementById('apiEndpoint').value;
         const response = await fetch(`${API_BASE_URL}/api/models?api_endpoint=${encodeURIComponent(currentApiEp)}`);
-        
+
         // Check if this request was cancelled while in flight
         if (thisRequest.cancelled) {
             console.log('Model load request was cancelled');
             return;
         }
-        
+
         if (!response.ok) {
             const errData = await response.json();
             throw new Error(errData.error || `HTTP error ${response.status}`);
         }
         const data = await response.json();
-        
+
         // Double-check the provider hasn't changed and request wasn't cancelled
         if (thisRequest.cancelled) {
             return;
@@ -267,7 +270,7 @@ async function loadAvailableModels() {
             console.log('Provider changed during model load, ignoring Ollama response');
             return;
         }
-        
+
         modelSelect.innerHTML = '';
 
         if (data.models && data.models.length > 0) {
@@ -310,7 +313,7 @@ fileUploadArea.addEventListener('drop', (e) => {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
         Array.from(files).forEach(file => {
-            addFileToList(file); 
+            addFileToList(file);
         });
         updateFileDisplay();
     }
@@ -335,7 +338,7 @@ function handleFileSelect(e) {
     const files = e.target.files;
     if (files.length > 0) {
         Array.from(files).forEach(file => {
-            addFileToList(file); 
+            addFileToList(file);
         });
         updateFileDisplay();
     }
@@ -347,56 +350,56 @@ async function addFileToList(file) {
         showMessage(`File '${file.name}' is already in the list.`, 'info');
         return;
     }
-    
+
     const fileExtension = file.name.split('.').pop().toLowerCase();
     const originalNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
     const outputPattern = document.getElementById('outputFilenamePattern').value || "translated_{originalName}.{ext}";
-    
-    let processingFileType = 'txt'; 
+
+    let processingFileType = 'txt';
     if (fileExtension === 'epub') {
         processingFileType = 'epub';
     } else if (fileExtension === 'srt') {
         processingFileType = 'srt';
     }
-    
+
     const outputFilename = outputPattern
         .replace("{originalName}", originalNameWithoutExt)
-        .replace("{ext}", fileExtension); 
+        .replace("{ext}", fileExtension);
 
     showMessage(`Uploading file: ${file.name}...`, 'info');
-        
+
     const formData = new FormData();
     formData.append('file', file);
-        
+
     try {
         const response = await fetch(`${API_BASE_URL}/api/upload`, {
             method: 'POST',
             body: formData
         });
-            
+
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || `Upload failed: ${response.statusText}`);
         }
-            
+
         const uploadResult = await response.json();
-            
+
         filesToProcess.push({
             name: file.name,
-            filePath: uploadResult.file_path,      
-            fileType: uploadResult.file_type,      
-            originalExtension: fileExtension,      
+            filePath: uploadResult.file_path,
+            fileType: uploadResult.file_type,
+            originalExtension: fileExtension,
             status: 'Queued',
             outputFilename: outputFilename,
             size: file.size,
             translationId: null,
             result: null,
-            content: null 
+            content: null
         });
-            
+
         showMessage(`File '${file.name}' (${uploadResult.file_type}) uploaded. Path: ${uploadResult.file_path}`, 'success');
         updateFileDisplay();
-            
+
     } catch (error) {
         showMessage(`Failed to upload file '${file.name}': ${error.message}`, 'error');
     }
@@ -410,10 +413,10 @@ function updateFileDisplay() {
         filesToProcess.forEach(file => {
             const li = document.createElement('li');
             li.setAttribute('data-filename', file.name);
-            
+
             const fileIcon = file.fileType === 'epub' ? '📚' : (file.fileType === 'srt' ? '🎬' : '📄');
             li.textContent = `${fileIcon} ${file.name} (${(file.size / 1024).toFixed(2)} KB) `;
-            
+
             const statusSpan = document.createElement('span');
             statusSpan.className = 'file-status';
             statusSpan.textContent = `(${file.status})`;
@@ -481,7 +484,7 @@ async function resetFiles() {
     document.getElementById('statsGrid').style.display = '';
     updateProgress(0);
     showMessage('', '');
-    
+
     // Delete uploaded files from server
     if (uploadedFilePaths.length > 0) {
         addLog(`🗑️ Deleting ${uploadedFilePaths.length} uploaded file(s) from server...`);
@@ -491,7 +494,7 @@ async function resetFiles() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ file_paths: uploadedFilePaths })
             });
-            
+
             if (response.ok) {
                 const result = await response.json();
                 addLog(`✅ Successfully deleted ${result.total_deleted} uploaded file(s).`);
@@ -506,7 +509,7 @@ async function resetFiles() {
             addLog("⚠️ Error occurred while deleting uploaded files.");
         }
     }
-    
+
     addLog("Form and file list reset.");
 }
 
@@ -517,11 +520,11 @@ function showMessage(text, type) {
 function addLog(message) {
     const logContainer = document.getElementById('logContainer');
     const timestamp = new Date().toLocaleTimeString();
-    
+
     logContainer.innerHTML += `<div class="log-entry">
         <span class="log-timestamp">[${timestamp}]</span> ${message}
     </div>`;
-    
+
     logContainer.scrollTop = logContainer.scrollHeight;
 }
 
@@ -619,7 +622,7 @@ async function processNextFileInQueue() {
     if (targetLanguageVal === 'Other') targetLanguageVal = document.getElementById('customTargetLang').value.trim();
 
     const provider = document.getElementById('llmProvider').value;
-    
+
     // Validate Gemini API key if using Gemini
     if (provider === 'gemini') {
         const geminiApiKey = document.getElementById('geminiApiKey').value.trim();
@@ -632,7 +635,7 @@ async function processNextFileInQueue() {
             return;
         }
     }
-    
+
     const config = {
         source_language: sourceLanguageVal,
         target_language: targetLanguageVal,
@@ -645,6 +648,9 @@ async function processNextFileInQueue() {
         context_window: parseInt(document.getElementById('contextWindow').value),
         max_attempts: parseInt(document.getElementById('maxAttempts').value),
         retry_delay: parseInt(document.getElementById('retryDelay').value),
+        temperature: parseFloat(document.getElementById('temperature').value),
+        top_k: parseInt(document.getElementById('topK').value),
+        top_p: parseFloat(document.getElementById('topP').value),
         output_filename: fileToTranslate.outputFilename,
         file_type: fileToTranslate.fileType,
         custom_instructions: document.getElementById('customInstructions').value.trim(),
@@ -657,14 +663,14 @@ async function processNextFileInQueue() {
              addLog(`❌ Critical Error: ${fileToTranslate.fileType.toUpperCase()} file ${fileToTranslate.name} has no server path. Upload might have failed silently or logic error.`);
              showMessage(`Cannot process ${fileToTranslate.fileType.toUpperCase()} ${fileToTranslate.name}: server path missing.`, 'error');
              updateFileStatusInList(fileToTranslate.name, 'Path Error');
-             currentProcessingJob = null; 
-             processNextFileInQueue(); 
+             currentProcessingJob = null;
+             processNextFileInQueue();
              return;
         }
         config.file_path = fileToTranslate.filePath;
-    } else { 
+    } else {
         if (fileToTranslate.content) {
-            config.text = fileToTranslate.content; 
+            config.text = fileToTranslate.content;
         } else {
             if (!fileToTranslate.filePath) {
                  addLog(`❌ Critical Error: TXT file ${fileToTranslate.name} has no server path and no direct content. Upload might have failed or logic error.`);
@@ -753,10 +759,10 @@ window.addEventListener('DOMContentLoaded', function() {
             postProcessingOptions.style.display = 'none';
         }
     });
-    
+
     // Load default configuration including languages
     loadDefaultConfig();
-    
+
     // Load file list on page load
     refreshFileList();
 });
@@ -766,7 +772,7 @@ async function loadDefaultConfig() {
         const response = await fetch(`${API_BASE_URL}/api/config`);
         if (response.ok) {
             const config = await response.json();
-            
+
             // Set default languages
             if (config.default_source_language) {
                 setDefaultLanguage('sourceLang', 'customSourceLang', config.default_source_language);
@@ -774,7 +780,7 @@ async function loadDefaultConfig() {
             if (config.default_target_language) {
                 setDefaultLanguage('targetLang', 'customTargetLang', config.default_target_language);
             }
-            
+
             // Set other configuration values
             if (config.api_endpoint) document.getElementById('apiEndpoint').value = config.api_endpoint;
             if (config.chunk_size) document.getElementById('chunkSize').value = config.chunk_size;
@@ -782,8 +788,11 @@ async function loadDefaultConfig() {
             if (config.context_window) document.getElementById('contextWindow').value = config.context_window;
             if (config.max_attempts) document.getElementById('maxAttempts').value = config.max_attempts;
             if (config.retry_delay) document.getElementById('retryDelay').value = config.retry_delay;
+            if (config.temperature) document.getElementById('temperature').value = config.temperature;
+            if (config.top_k) document.getElementById('topK').value = config.top_k;
+            if (config.top_p) document.getElementById('topP').value = config.top_p;
             if (config.gemini_api_key) document.getElementById('geminiApiKey').value = config.gemini_api_key;
-            
+
             // Load available models after setting configuration
             loadAvailableModels();
         }
@@ -795,7 +804,7 @@ async function loadDefaultConfig() {
 function setDefaultLanguage(selectId, customInputId, defaultLanguage) {
     const select = document.getElementById(selectId);
     const customInput = document.getElementById(customInputId);
-    
+
     // Check if the default language is in the dropdown options
     let languageFound = false;
     for (let option of select.options) {
@@ -806,7 +815,7 @@ function setDefaultLanguage(selectId, customInputId, defaultLanguage) {
             break;
         }
     }
-    
+
     // If language not found in dropdown, use "Other" and set custom input
     if (!languageFound) {
         select.value = 'Other';
@@ -823,46 +832,46 @@ async function refreshFileList() {
     const containerDiv = document.getElementById('fileManagementContainer');
     const tableBody = document.getElementById('fileTableBody');
     const emptyDiv = document.getElementById('fileListEmpty');
-    
+
     loadingDiv.style.display = 'block';
     containerDiv.style.display = 'none';
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/api/files`);
         if (!response.ok) {
             throw new Error('Failed to fetch file list');
         }
-        
+
         const data = await response.json();
-        
+
         loadingDiv.style.display = 'none';
         containerDiv.style.display = 'block';
-        
+
         // Clear existing table rows
         tableBody.innerHTML = '';
         selectedFiles.clear();
         updateFileSelectionButtons();
-        
+
         if (data.files.length === 0) {
             emptyDiv.style.display = 'block';
             containerDiv.querySelector('.file-table').style.display = 'none';
         } else {
             emptyDiv.style.display = 'none';
             containerDiv.querySelector('.file-table').style.display = 'table';
-            
+
             // Populate table with files
             data.files.forEach(file => {
                 const row = document.createElement('tr');
-                
+
                 // Format date
                 const modifiedDate = new Date(file.modified_date);
                 const formattedDate = modifiedDate.toLocaleString();
-                
+
                 // Determine file icon
-                const fileIcon = file.file_type === 'epub' ? '📚' : 
-                               file.file_type === 'srt' ? '🎬' : 
+                const fileIcon = file.file_type === 'epub' ? '📚' :
+                               file.file_type === 'srt' ? '🎬' :
                                file.file_type === 'txt' ? '📄' : '📎';
-                
+
                 row.innerHTML = `
                     <td>
                         <input type="checkbox" class="file-checkbox" data-filename="${file.filename}" onchange="toggleFileSelection('${file.filename}')">
@@ -880,15 +889,15 @@ async function refreshFileList() {
                         </button>
                     </td>
                 `;
-                
+
                 tableBody.appendChild(row);
             });
         }
-        
+
         // Update totals
         document.getElementById('totalFileCount').textContent = data.total_files;
         document.getElementById('totalFileSize').textContent = `${data.total_size_mb} MB`;
-        
+
     } catch (error) {
         loadingDiv.style.display = 'none';
         showMessage(`Error loading file list: ${error.message}`, 'error');
@@ -907,10 +916,10 @@ function toggleFileSelection(filename) {
 function toggleSelectAll() {
     const checkboxes = document.querySelectorAll('.file-checkbox');
     const selectAllFiles = document.getElementById('selectAllFiles');
-    
+
     // Use the Select All checkbox state
     const isChecked = selectAllFiles.checked;
-    
+
     checkboxes.forEach(checkbox => {
         checkbox.checked = isChecked;
         const filename = checkbox.getAttribute('data-filename');
@@ -920,7 +929,7 @@ function toggleSelectAll() {
             selectedFiles.delete(filename);
         }
     });
-    
+
     updateFileSelectionButtons();
 }
 
@@ -928,7 +937,7 @@ function updateFileSelectionButtons() {
     const hasSelection = selectedFiles.size > 0;
     document.getElementById('batchDownloadBtn').disabled = !hasSelection;
     document.getElementById('batchDeleteBtn').disabled = !hasSelection;
-    
+
     // Update button text with count
     if (hasSelection) {
         document.getElementById('batchDownloadBtn').innerHTML = `📥 Download Selected (${selectedFiles.size})`;
@@ -947,14 +956,14 @@ async function deleteSingleFile(filename) {
     if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
         return;
     }
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/api/files/${encodeURIComponent(filename)}`, {
             method: 'DELETE'
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok) {
             showMessage(data.message, 'success');
             refreshFileList();
@@ -971,7 +980,7 @@ async function downloadSelectedFiles() {
         showMessage('No files selected for download', 'error');
         return;
     }
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/api/files/batch/download`, {
             method: 'POST',
@@ -982,7 +991,7 @@ async function downloadSelectedFiles() {
                 filenames: Array.from(selectedFiles)
             })
         });
-        
+
         if (response.ok) {
             // Download the zip file
             const blob = await response.blob();
@@ -995,7 +1004,7 @@ async function downloadSelectedFiles() {
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
-            
+
             showMessage(`Downloaded ${selectedFiles.size} files as zip`, 'success');
         } else {
             const data = await response.json();
@@ -1011,11 +1020,11 @@ async function deleteSelectedFiles() {
         showMessage('No files selected for deletion', 'error');
         return;
     }
-    
+
     if (!confirm(`Are you sure you want to delete ${selectedFiles.size} file(s)?`)) {
         return;
     }
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/api/files/batch/delete`, {
             method: 'POST',
@@ -1026,9 +1035,9 @@ async function deleteSelectedFiles() {
                 filenames: Array.from(selectedFiles)
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok) {
             let message = `Deleted ${data.total_deleted} file(s)`;
             if (data.failed.length > 0) {
