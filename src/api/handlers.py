@@ -17,7 +17,7 @@ from .websocket import emit_update
 def run_translation_async_wrapper(translation_id, config, state_manager, output_dir, socketio):
     """
     Wrapper for running translation in async context
-    
+
     Args:
         translation_id (str): Translation job ID
         config (dict): Translation configuration
@@ -48,7 +48,7 @@ def run_translation_async_wrapper(translation_id, config, state_manager, output_
 async def perform_actual_translation(translation_id, config, state_manager, output_dir, socketio):
     """
     Perform the actual translation job
-    
+
     Args:
         translation_id (str): Translation job ID
         config (dict): Translation configuration
@@ -78,7 +78,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         logs.append(log_entry)
         state_manager.set_translation_field(translation_id, 'logs', logs)
         emit_update(socketio, translation_id, {'log': log_entry['message']}, state_manager)
-    
+
     def storage_callback(log_entry):
         """Callback for storing logs"""
         logs = state_manager.get_translation_field(translation_id, 'logs')
@@ -86,15 +86,15 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             logs = []
         logs.append(log_entry)
         state_manager.set_translation_field(translation_id, 'logs', logs)
-    
+
     logger = setup_web_logger(web_callback, storage_callback)
-    
+
     def _log_message_callback(message_key_from_translate_module, message_content="", data=None):
         """Legacy callback wrapper for backward compatibility"""
         # Skip debug messages for web interface
         if message_key_from_translate_module in ["llm_prompt_debug", "llm_raw_response_preview"]:
             return
-        
+
         # Handle structured data from new logging system
         if data and isinstance(data, dict):
             log_type = data.get('type')
@@ -144,9 +144,9 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         })
 
         output_filepath_on_server = os.path.join(output_dir, config['output_filename'])
-        
+
         input_path_for_translate_module = config.get('file_path')
-        
+
         # Debug logging for file paths
         if input_path_for_translate_module:
             _log_message_callback("debug_input_path", f"🔍 Input file path: {input_path_for_translate_module}")
@@ -154,12 +154,12 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             if input_path_obj.exists():
                 _log_message_callback("debug_input_resolved", f"🔍 Resolved path: {input_path_obj.resolve()}")
                 _log_message_callback("debug_parent_dir", f"🔍 Parent directory: {input_path_obj.parent.name}")
-        
+
         if config['file_type'] == 'epub':
             if not input_path_for_translate_module:
                 _log_message_callback("epub_error_no_path", "❌ EPUB translation requires a file path from upload.")
                 raise Exception("EPUB translation requires a file_path.")
-            
+
             await translate_epub_file(
                 input_path_for_translate_module,
                 output_filepath_on_server,
@@ -176,10 +176,11 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 llm_provider=config.get('llm_provider', 'ollama'),
                 gemini_api_key=config.get('gemini_api_key', ''),
                 enable_post_processing=config.get('enable_post_processing', False),
-                post_processing_instructions=config.get('post_processing_instructions', '')
+                post_processing_instructions=config.get('post_processing_instructions', ''),
+                config=config
             )
             state_manager.set_translation_field(translation_id, 'result', "[EPUB file translated - download to view]")
-            
+
         elif config['file_type'] == 'txt':
             temp_txt_file_path = None
             if 'text' in config and input_path_for_translate_module is None:
@@ -190,7 +191,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
 
             # Use unified file processing logic
             from src.utils.file_utils import translate_text_file_with_callbacks
-            
+
             await translate_text_file_with_callbacks(
                 input_path_for_translate_module,
                 output_filepath_on_server,
@@ -217,11 +218,11 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
 
             if temp_txt_file_path and os.path.exists(temp_txt_file_path):
                 os.remove(temp_txt_file_path)
-                
+
         elif config['file_type'] == 'srt':
             # Use unified file processing logic
             from src.utils.file_utils import translate_srt_file_with_callbacks
-            
+
             await translate_srt_file_with_callbacks(
                 input_path_for_translate_module,
                 output_filepath_on_server,
@@ -240,16 +241,16 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 enable_post_processing=config.get('enable_post_processing', False),
                 post_processing_instructions=config.get('post_processing_instructions', '')
             )
-            
+
             state_manager.set_translation_field(translation_id, 'result', "[SRT file translated - download to view]")
-            
+
         else:
             _log_message_callback("unknown_file_type", f"❌ Unknown file type: {config['file_type']}")
             raise Exception(f"Unsupported file type: {config['file_type']}")
 
         _log_message_callback("save_process_info", f"💾 Translation process ended. File saved (or partially saved) at: {output_filepath_on_server}")
         state_manager.set_translation_field(translation_id, 'output_filepath', output_filepath_on_server)
-        
+
         # Log debug info about uploaded file path for troubleshooting
         if 'file_path' in config and config['file_path']:
             _log_message_callback("debug_file_path", f"🔍 Debug - Uploaded file path: {config['file_path']}")
@@ -267,19 +268,19 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             'output_filename': config['output_filename'],
             'file_type': config['file_type']
         }
-        
+
         if state_manager.get_translation_field(translation_id, 'interrupted'):
             state_manager.set_translation_field(translation_id, 'status', 'interrupted')
             _log_message_callback("summary_interrupted", f"🛑 Translation interrupted by user. Partial result saved. Time: {elapsed_time:.2f}s.")
             final_status_payload['status'] = 'interrupted'
             final_status_payload['progress'] = state_manager.get_translation_field(translation_id, 'progress') or 0
-            
+
             # Also clean up uploaded file on interruption if translation produced output
             if 'file_path' in config and config['file_path'] and os.path.exists(output_filepath_on_server):
                 uploaded_file_path = config['file_path']
                 # Convert to Path object for reliable path operations
                 upload_path = Path(uploaded_file_path)
-                
+
                 # Check if file exists
                 if upload_path.exists():
                     # Check if it's in the uploads directory (to avoid deleting user's original files)
@@ -288,18 +289,18 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                         # Get the absolute path and check if 'uploads' is in the path parts
                         resolved_path = upload_path.resolve()
                         path_parts = resolved_path.parts
-                        
+
                         # Log path parts for debugging
                         _log_message_callback("cleanup_path_parts", f"📋 Path parts: {path_parts}")
                         _log_message_callback("cleanup_parent_name", f"📋 Parent directory name: {resolved_path.parent.name}")
-                        
+
                         # Check both: if 'uploads' is in path parts OR if parent directory is 'uploads'
                         is_in_uploads = 'uploads' in path_parts or resolved_path.parent.name == 'uploads'
-                        
+
                         # Additional safety check: ensure the file is within the translated_files/uploads directory
                         uploads_dir = Path(output_dir) / 'uploads'
                         _log_message_callback("cleanup_uploads_dir", f"📋 Expected uploads directory: {uploads_dir}")
-                        
+
                         try:
                             # Check if the file is within the uploads directory
                             resolved_path.relative_to(uploads_dir.resolve())
@@ -308,7 +309,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                         except ValueError:
                             # File is not in the uploads directory
                             _log_message_callback("cleanup_check", f"🔍 File is NOT in uploads directory (relative_to check failed)")
-                        
+
                         if is_in_uploads:
                             upload_path.unlink()  # More reliable than os.remove
                             _log_message_callback("cleanup_uploaded_file", f"🗑️ Cleaned up uploaded source file: {upload_path.name}")
@@ -323,7 +324,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             final_status_payload['status'] = 'completed'
             _update_translation_progress_callback(100)
             final_status_payload['progress'] = 100
-            
+
             # Clean up uploaded file if it exists and is in the uploads directory
             _log_message_callback("cleanup_start", f"🧹 Starting cleanup check...")
             if 'file_path' in config and config['file_path']:
@@ -331,7 +332,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 uploaded_file_path = config['file_path']
                 # Convert to Path object for reliable path operations
                 upload_path = Path(uploaded_file_path)
-                
+
                 # Check if file exists
                 if upload_path.exists():
                     # Check if it's in the uploads directory (to avoid deleting user's original files)
@@ -340,18 +341,18 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                         # Get the absolute path and check if 'uploads' is in the path parts
                         resolved_path = upload_path.resolve()
                         path_parts = resolved_path.parts
-                        
+
                         # Log path parts for debugging
                         _log_message_callback("cleanup_path_parts", f"📋 Path parts: {path_parts}")
                         _log_message_callback("cleanup_parent_name", f"📋 Parent directory name: {resolved_path.parent.name}")
-                        
+
                         # Check both: if 'uploads' is in path parts OR if parent directory is 'uploads'
                         is_in_uploads = 'uploads' in path_parts or resolved_path.parent.name == 'uploads'
-                        
+
                         # Additional safety check: ensure the file is within the translated_files/uploads directory
                         uploads_dir = Path(output_dir) / 'uploads'
                         _log_message_callback("cleanup_uploads_dir", f"📋 Expected uploads directory: {uploads_dir}")
-                        
+
                         try:
                             # Check if the file is within the uploads directory
                             resolved_path.relative_to(uploads_dir.resolve())
@@ -360,7 +361,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                         except ValueError:
                             # File is not in the uploads directory
                             _log_message_callback("cleanup_check", f"🔍 File is NOT in uploads directory (relative_to check failed)")
-                        
+
                         if is_in_uploads:
                             upload_path.unlink()  # More reliable than os.remove
                             _log_message_callback("cleanup_uploaded_file", f"🗑️ Cleaned up uploaded source file: {upload_path.name}")
@@ -375,7 +376,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             final_status_payload['status'] = 'error'
             final_status_payload['error'] = state_manager.get_translation_field(translation_id, 'error') or 'Unknown error during finalization.'
             final_status_payload['progress'] = state_manager.get_translation_field(translation_id, 'progress') or 0
-        
+
         stats = state_manager.get_translation_field(translation_id, 'stats') or {}
         if config['file_type'] == 'txt' or (config['file_type'] == 'epub' and stats.get('total_chunks', 0) > 0):
             final_stats = stats
@@ -383,7 +384,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         elif config['file_type'] == 'srt' and stats.get('total_subtitles', 0) > 0:
             final_stats = stats
             _log_message_callback("summary_stats_final", f"📊 Stats: {final_stats.get('completed_subtitles', 0)} processed, {final_stats.get('failed_subtitles', 0)} failed out of {final_stats.get('total_subtitles', 0)} total subtitles.")
-        
+
         emit_update(socketio, translation_id, final_status_payload, state_manager)
 
     except Exception as e:
@@ -398,9 +399,9 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         if state_manager.exists(translation_id):
             state_manager.set_translation_field(translation_id, 'status', 'error')
             state_manager.set_translation_field(translation_id, 'error', critical_error_msg)
-            
+
             emit_update(socketio, translation_id, {
-                'error': critical_error_msg, 
+                'error': critical_error_msg,
                 'status': 'error',
                 'result': state_manager.get_translation_field(translation_id, 'result') or f"Translation failed: {critical_error_msg}",
                 'progress': state_manager.get_translation_field(translation_id, 'progress') or 0
@@ -410,7 +411,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
 def start_translation_job(translation_id, config, state_manager, output_dir, socketio):
     """
     Start a translation job in a separate thread
-    
+
     Args:
         translation_id (str): Translation job ID
         config (dict): Translation configuration

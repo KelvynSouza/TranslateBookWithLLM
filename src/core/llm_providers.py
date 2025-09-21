@@ -129,8 +129,8 @@ class OllamaProvider(LLMProvider):
 class GeminiProvider(LLMProvider):
     """Google Gemini API provider"""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash"):
-        super().__init__(model)
+    def __init__(self, api_key: str, model: str = "gemini-2.0-flash", config: Dict[str, Any] = {}):
+        super().__init__(model, config)
         self.api_key = api_key
         self.api_endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -195,7 +195,7 @@ class GeminiProvider(LLMProvider):
                 }]
             }],
             "generationConfig": {
-                "temperature": 0.7,
+                "temperature": self.config['temperature'],
                 "maxOutputTokens": 2048
             }
         }
@@ -283,7 +283,8 @@ def create_llm_provider(provider_type: str = "ollama", **kwargs) -> LLMProvider:
                 raise ValueError("Gemini provider requires an API key. Set GEMINI_API_KEY environment variable or pass api_key parameter.")
         return GeminiProvider(
             api_key=api_key,
-            model=kwargs.get("model", "gemini-2.0-flash")
+            model=kwargs.get("model", "gemini-2.0-flash"),
+            config=kwargs["config"]
         )
     else:
         raise ValueError(f"Unknown provider type: {provider_type}")
